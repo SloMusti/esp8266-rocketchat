@@ -14,8 +14,8 @@
 #include <ESP8266WiFi.h>
 #include <WiFiClientSecure.h>
 
-const char* ssid = "veliki";
-const char* password = "malimozolj";
+const char* ssid = "open.wlan-si.net";
+const char* password = "";
 
 const char* host = "chat.wlan-si.net";
 const int httpsPort = 443;
