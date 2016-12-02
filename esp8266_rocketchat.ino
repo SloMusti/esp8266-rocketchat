@@ -13,18 +13,32 @@
 
 #include <ESP8266WiFi.h>
 #include <WiFiClientSecure.h>
+#include "RestClient.h"
+
+
+#define HTTP_DEBUG
+
+
 
 const char* ssid = "open.wlan-si.net";
 const char* password = "";
 
 const char* host = "chat.wlan-si.net";
+//const char* host = "requestb.in";
 const int httpsPort = 443;
 
 // Use web browser to view and copy
 // SHA1 fingerprint of the certificate
 const char* fingerprint = "4F 6F 19 74 49 CD 0A 19 AC 21 39 2A C2 38 93 31 47 A2 1B 7C";
+//const char* fingerprint = "E1 17 1D 8B 13 58 02 C9 C2 6A 11 98 73 45 74 90 16 C1 C7 00";
+
+
+RestClient client = RestClient(host,443,fingerprint);
+
+//RestClient client = RestClient(host);
 
 void setup() {
+  StaticJsonBuffer<512> jsonBuffer;
   Serial.begin(115200);
   Serial.println();
   Serial.print("connecting to ");
@@ -40,92 +54,93 @@ void setup() {
   Serial.println(WiFi.localIP());
 
   // Use WiFiClientSecure class to create TLS connection
-  WiFiClientSecure client;
+  /*WiFiClientSecure client;
   Serial.print("connecting to ");
   Serial.println(host);
   if (!client.connect(host, httpsPort)) {
     Serial.println("connection failed");
     return;
   }
+  
 
-  if (client.verify(fingerprint, host)) {
+   if (client.verify(fingerprint, host)) {
     Serial.println("certificate matches");
   } else {
     Serial.println("certificate doesn't match");
   }
+  */
+  //authenticate
+  String  response = "";
+  int statusCode = client.post("/api/login", "user=musti_bot&password=chatbot", &response);
+  Serial.print(" LOGON Status code from server: ");
+  Serial.println(statusCode);
+  Serial.print("Response body from server: ");
+  Serial.println(response);
+  
+  char index_token = response.indexOf("\"authToken\": \"") + 14;
+  char index_userId = response.indexOf("\"userId\": \"") + 11;
 
-  String url = "/api/login";
-  //String url = "/14s7wad1";
-  Serial.print("requesting URL: ");
-  Serial.println(url);
+  String authToken=response.substring(index_token, index_token+43);
+  String userId=response.substring(index_userId, index_userId+17);
 
- /* client.print(String("GET ") + url + " HTTP/1.1\r\n" +
-               "Host: " + host + "\r\n" +
-               "User-Agent: BuildFailureDetectorESP8266\r\n" +
-               "Connection: close\r\n\r\n");
-  */             
-  String postdata ="password=chatbot&user=musti_bot";
- client.print(String("POST ") + url + " HTTP/1.1\r\n" + "Host: " + host + 
-    "\r\n" + "User-Agent: Arduino/1.0\r\n" + "Content-type: application/x-www-form-urlencoded\r\n" + 
-    "Content-Length: " + postdata.length() + "\r\n" + "Connection: close\r\n\r\n");
-client.println(postdata);
+// list rooms
+  String header = "X-Auth-Token: ";
+  header += authToken;
+  header += "\r\nX-User-Id: ";
+  header += userId;
+  header += "\r\n";
 
-while (client.connected()) {
-    String line = client.readStringUntil('\n');
-    if (line == "\r") {
-      Serial.println("#headers received");
-      Serial.println(line);
-      break;
-    }
-  }
-  String line = client.readStringUntil('\n');
-  Serial.println("#parse1");
-  Serial.println(line); // gives 8c
-  line = client.readStringUntil('\n');
-  Serial.println("#parse2");
-  Serial.println(line); // gives {
-  line = client.readStringUntil('\n');
-  Serial.println("#parse3");
-  Serial.println(line);
-  line = client.readStringUntil('\n');
-  Serial.println("#parse4");
-  Serial.println(line);
-  line = client.readStringUntil('\n');
-  Serial.println("#parse5");
-  Serial.println(line); //auth token
-  //remove text
-  int commaIndex = line.indexOf('"');
-  String authToken=line.substring(commaIndex+14, commaIndex+57);
-  Serial.print("#authToken:");
-  Serial.println(authToken);
-  line = client.readStringUntil('\n');
-  Serial.println("#parse6");
-  Serial.println(line); //user token
-  commaIndex = line.indexOf('"');
-  String userId=line.substring(commaIndex+11, commaIndex+28);
-  Serial.print("#userId:");
-  Serial.println(userId);
-      
+  const char content_type[] = "application/x-www-form-urlencoded";
+  const char content_type2[] = "application/json";
+  
+  char header_buffer[header.length()];
+  header.toCharArray(header_buffer, header.length());
 
-  String postdata2 ="X-Auth-Token: ";
-  postdata2 += authToken;
-  postdata2 += "\r\n";
-  postdata2 +="X-User-Id: ";
-  postdata2 += userId;
-  postdata2 += "\r\n";
-  String url2 = "/api/rooms/bot_test/send";
-  String postdata3 =" \"msg\" : \"OK\" ";
- client.print(String("POST ") + url2 + " HTTP/1.1\r\n" + "Host: " + host + 
-    "\r\n" + "User-Agent: Arduino/1.0\r\n" + postdata2 + "Content-Length: " + postdata3.length() + "Connection: close\r\n\r\n");
- client.print(postdata3);
+  response = "";
+  client.setHeader(header_buffer);
+  client.setContentType("");
+  statusCode = client.get("/api/publicRooms", &response);
+  Serial.print("ROOMS Status code from server: ");
+  Serial.println(statusCode);
+  Serial.print("Response body from server: ");
+  Serial.println(response);
+
+  //join room message
+
+  response = "";
+  client.setHeader(header_buffer);
+  client.setContentType(content_type2);
+  statusCode = client.post("/api/rooms/Kb2ZtwkpxvYLLSj9q/join", "{}", &response);
+  Serial.print("JOIN status code from server: ");
+  Serial.println(statusCode);
+  Serial.print("Response body from server: ");
+  Serial.println(response);
+  
+
+  IPAddress ip = WiFi.localIP();
+  char localip[20];
+  sprintf_P(localip, PSTR("%u.%u.%u.%u"), ip[0], ip[1], ip[2], ip[3]); // ? not sure what it does
+
+ //send message
+  String message = "{ \"msg\" : \"RSSI:";
+  message+= String(WiFi.RSSI());
+  message+=" dBm IP: ";
+  message+= localip;
+  message+= "\" }";
+
+  char message_buffer[message.length()+2];
+  message.toCharArray(message_buffer, message.length()+2);
+
+  response = "";
+  client.setHeader(header_buffer);
+  client.setContentType(content_type2);
+  statusCode = client.post("/api/rooms/Kb2ZtwkpxvYLLSj9q/send", message_buffer, &response);
+  Serial.print("SEND MESSAGE status code from server: ");
+  Serial.println(statusCode);
+  Serial.print("Response body from server: ");
+  Serial.println(response);
  
-  Serial.println("request2 sent");
-  while (client.connected()) {
-    //String line = client.readStringUntil('\n');
-    String line = client.readString();
-    Serial.println(line);
-  }
-Serial.println("finished");
+
 }
 
 void loop() {
