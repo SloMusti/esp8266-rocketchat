@@ -16,9 +16,6 @@
 #include "RestClient.h"
 
 
-#define HTTP_DEBUG
-
-
 
 const char* ssid = "open.wlan-si.net";
 const char* password = "";
@@ -34,11 +31,13 @@ const char* fingerprint = "4F 6F 19 74 49 CD 0A 19 AC 21 39 2A C2 38 93 31 47 A2
 
 
 RestClient client = RestClient(host,443,fingerprint);
+const char content_type_url[] = "application/x-www-form-urlencoded";
+const char content_type_json[] = "application/json";
+char header_auth_buffer[100]; // header length is standard
 
 //RestClient client = RestClient(host);
 
 void setup() {
-  StaticJsonBuffer<512> jsonBuffer;
   Serial.begin(115200);
   Serial.println();
   Serial.print("connecting to ");
@@ -53,69 +52,9 @@ void setup() {
   Serial.println("IP address: ");
   Serial.println(WiFi.localIP());
 
-  // Use WiFiClientSecure class to create TLS connection
-  /*WiFiClientSecure client;
-  Serial.print("connecting to ");
-  Serial.println(host);
-  if (!client.connect(host, httpsPort)) {
-    Serial.println("connection failed");
-    return;
-  }
-  
-
-   if (client.verify(fingerprint, host)) {
-    Serial.println("certificate matches");
-  } else {
-    Serial.println("certificate doesn't match");
-  }
-  */
-  //authenticate
-  String  response = "";
-  int statusCode = client.post("/api/login", "user=musti_bot&password=chatbot", &response);
-  Serial.print(" LOGON Status code from server: ");
-  Serial.println(statusCode);
-  Serial.print("Response body from server: ");
-  Serial.println(response);
-  
-  char index_token = response.indexOf("\"authToken\": \"") + 14;
-  char index_userId = response.indexOf("\"userId\": \"") + 11;
-
-  String authToken=response.substring(index_token, index_token+43);
-  String userId=response.substring(index_userId, index_userId+17);
-
-// list rooms
-  String header = "X-Auth-Token: ";
-  header += authToken;
-  header += "\r\nX-User-Id: ";
-  header += userId;
-  header += "\r\n";
-
-  const char content_type[] = "application/x-www-form-urlencoded";
-  const char content_type2[] = "application/json";
-  
-  char header_buffer[header.length()];
-  header.toCharArray(header_buffer, header.length());
-
-  response = "";
-  client.setHeader(header_buffer);
-  client.setContentType("");
-  statusCode = client.get("/api/publicRooms", &response);
-  Serial.print("ROOMS Status code from server: ");
-  Serial.println(statusCode);
-  Serial.print("Response body from server: ");
-  Serial.println(response);
-
-  //join room message
-
-  response = "";
-  client.setHeader(header_buffer);
-  client.setContentType(content_type2);
-  statusCode = client.post("/api/rooms/Kb2ZtwkpxvYLLSj9q/join", "{}", &response);
-  Serial.print("JOIN status code from server: ");
-  Serial.println(statusCode);
-  Serial.print("Response body from server: ");
-  Serial.println(response);
-  
+  rocket_chat_login("musti_bot","chatbot");
+  rocket_chat_publicRooms();
+  rocket_chat_join("Kb2ZtwkpxvYLLSj9q");
 
   IPAddress ip = WiFi.localIP();
   char localip[20];
@@ -128,22 +67,97 @@ void setup() {
   message+= localip;
   message+= "\" }";
 
+  rocket_chat_send(message,"Kb2ZtwkpxvYLLSj9q");
+}
+
+
+void loop() {
+}
+
+void rocket_chat_login(String username, String password){
+  String login = "user=";
+  login += username;
+  login += "&password=";
+  login += password;
+  
+  char message_buffer[login.length()+2];
+  login.toCharArray(message_buffer, login.length()+2);
+  
+  //authenticate
+  String  response = "";
+  int statusCode = client.post("/api/login", message_buffer, &response);
+
+  //check if successful
+  if(response.indexOf("success")!=-1){
+    Serial.println("Success: Login");
+  }
+
+  //parse token and userId
+  
+  char index_token = response.indexOf("\"authToken\": \"") + 14;
+  char index_userId = response.indexOf("\"userId\": \"") + 11;
+  String authToken=response.substring(index_token, index_token+43);
+  String userId=response.substring(index_userId, index_userId+17);
+
+  String header_auth= "X-Auth-Token: ";
+  header_auth += authToken;
+  header_auth += "\r\nX-User-Id: ";
+  header_auth += userId;
+  header_auth += "\r\n";
+  header_auth.toCharArray(header_auth_buffer, header_auth.length());
+}
+
+void rocket_chat_publicRooms(){
+  String response = "";
+  client.setHeader(header_auth_buffer);
+  client.setContentType("");
+  int statusCode = client.get("/api/publicRooms", &response);
+    //check if successful
+  if(response.indexOf("success")!=-1){
+    Serial.println("Success: publicRooms");
+  }
+}
+
+void rocket_chat_join(String rid){
+  String url = "/api/rooms/";
+  url += rid;
+  url += "/join";
+  
+  char url_buffer[url.length()+2];
+  url.toCharArray(url_buffer, url.length()+2);
+  
+  //join room message
+  
+  String response = "";
+  client.setHeader(header_auth_buffer);
+  client.setContentType(content_type_json);
+  int statusCode = client.post(url_buffer, "{}", &response);
+    //check if successful
+  if(response.indexOf("success")!=-1){
+    Serial.println("Success: Join");
+  }
+}  
+
+void rocket_chat_send(String message, String rid){
+
+  String url = "/api/rooms/";
+  url += rid;
+  url += "/send";
+  
+  char url_buffer[url.length()+2];
+  url.toCharArray(url_buffer, url.length()+2);
+  
   char message_buffer[message.length()+2];
   message.toCharArray(message_buffer, message.length()+2);
 
-  response = "";
-  client.setHeader(header_buffer);
-  client.setContentType(content_type2);
-  statusCode = client.post("/api/rooms/Kb2ZtwkpxvYLLSj9q/send", message_buffer, &response);
-  Serial.print("SEND MESSAGE status code from server: ");
-  Serial.println(statusCode);
-  Serial.print("Response body from server: ");
-  Serial.println(response);
- 
-
-}
-
-void loop() {
+  String response = "";
+  client.setHeader(header_auth_buffer);
+  client.setContentType(content_type_json);
+  int statusCode = client.post(url_buffer, message_buffer, &response);
+    //check if successful
+  if(response.indexOf("success")!=-1){
+    Serial.println("Success: Post");
+  }
 }
 
 
